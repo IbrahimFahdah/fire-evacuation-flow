@@ -1,0 +1,13 @@
+{
+  "name": "evacuation-flow",
+  "version": "0.1.0",
+  "description": "Browser-based, agent-based evacuation simulator for floor plans: DXF import, social force model, bottleneck heatmaps, PD 7974-6 pre-movement, IMO verification tests.",
+  "private": true,
+  "scripts": {
+    "build": "python3 tools/build.py",
+    "test": "node tests/engine.test.js",
+    "test:browser": "python3 tools/build.py && python3 tests/browser_check.py",
+    "sample": "python3 samples/make_sample_dxf.py && python3 samples/render_preview.py"
+  },
+  "keywords": ["evacuation", "egress", "social-force-model", "bim", "dxf", "fire-safety", "crowd-simulation"]
+}
