@@ -16,7 +16,7 @@ node tests/engine.test.js       # engine verification (IMO tests + door-flow swe
 python3 tests/browser_check.py  # optional headless-Chromium smoke test (needs Playwright)
 ```
 
-To publish on **GitHub Pages**, go to Settings → Pages → Deploy from branch → `main` / `/dist`. Then `dist/index.html` is served at `https://<you>.github.io/<repo>/`.
+Live at **https://ibrahimfahdah.github.io/fire-evacuation-flow/**. Every push to `main` runs `.github/workflows/pages.yml`, which rebuilds `dist/` and publishes it to the `gh-pages` branch (Settings → Pages → Deploy from branch → `gh-pages` / root).
 
 ## What it does
 
