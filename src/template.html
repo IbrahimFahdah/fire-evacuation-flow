@@ -226,7 +226,7 @@ canvas.sweep { width: 100%; height: 260px; display: block; }
           <button data-speed="1" aria-pressed="false">1×</button><button data-speed="4" aria-pressed="true">4×</button><button data-speed="10" aria-pressed="false">10×</button><button data-speed="30" aria-pressed="false">30×</button>
         </div>
         <div class="seg" role="group" aria-label="Heatmap" id="heatSeg">
-          <button data-heat="none" aria-pressed="false">People</button><button data-heat="peak" aria-pressed="true">Density</button><button data-heat="cong" aria-pressed="false">Queue time</button>
+          <button data-heat="none" aria-pressed="false">People</button><button data-heat="peak" aria-pressed="true">Density</button><button data-heat="cong" aria-pressed="false">Queue time</button><button data-heat="cpath" aria-pressed="false">Common path</button>
         </div>
         <div class="legend" id="legend"></div>
       </div>
@@ -304,18 +304,19 @@ canvas.sweep { width: 100%; height: 260px; display: block; }
       </details>
 
       <details class="card" open>
-        <summary><h2>Code checks <small>indicative</small></h2></summary>
+        <summary><h2>Code checks <small>UAE FLS Code 2018</small></h2></summary>
+        <div class="field"><label for="i-occ">Occupancy (Tables 3.13 and 3.16)</label><span></span>
+          <select id="i-occ" style="grid-column:1/-1"></select>
+        </div>
+        <label class="check"><input type="checkbox" id="L-spr" checked> Building fully sprinklered</label>
+        <div class="field"><label for="i-height">Building height (sets how remoteness is measured)</label><span></span>
+          <select id="i-height" style="grid-column:1/-1">
+            <option value="low">Low-rise or mid-rise — walking distance between exits</option>
+            <option value="high">High-rise or super high-rise — straight line between exit doors</option>
+          </select>
+        </div>
         <table id="codeTable"></table>
-        <details>
-          <summary class="note" style="cursor:pointer">Limits used</summary>
-          <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
-            <div class="row"><label class="note" for="L-travel" style="flex:1">Max travel distance (m)</label><input type="number" id="L-travel" value="91" step="1"></div>
-            <div class="row"><label class="note" for="L-stair" style="flex:1">Stair capacity factor (mm/person)</label><input type="number" id="L-stair" value="7.6" step="0.1"></div>
-            <div class="row"><label class="note" for="L-level" style="flex:1">Door capacity factor (mm/person)</label><input type="number" id="L-level" value="5.0" step="0.1"></div>
-            <label class="check"><input type="checkbox" id="L-spr" checked> Sprinklered (remoteness ≥ ⅓ of the diagonal, else ½)</label>
-          </div>
-        </details>
-        <p class="note">Defaults follow NFPA 101 for a sprinklered business occupancy. Replace them with the figures from the UAE Fire &amp; Life Safety Code edition that applies to your project. Prescriptive checks only — not a compliance sign-off.</p>
+        <p class="note">Limits from the UAE Fire &amp; Life Safety Code of Practice, September 2018 (CDGH-OP-25), Chapter 3. Prescriptive checks only, not a compliance sign-off: single-exit permissions, dead ends, door hardware, fire ratings and the occupancy rules in Section 5 are not assessed.</p>
       </details>
     </aside>
   </section>
@@ -366,12 +367,16 @@ canvas.sweep { width: 100%; height: 260px; display: block; }
         <p>When a run ends, the Results card also shows the SFPE hydraulic estimate: alarm + 99th-percentile response + the longer of the walk to each exit at 1.19 m/s or the time for that exit’s share of people to pass its door at 1.32 persons/s per metre of effective width (clear width minus 0.15 m each side). Agreement between the two is a sanity check; differences point at geometry the hand method can’t see, such as a crowd merging at a corridor door.</p>
       </div>
       <div>
+        <h3>7 · Code checks (UAE Fire &amp; Life Safety Code, 2018)</h3>
+        <p>Pick the occupancy and the sprinkler status; the limits come from Chapter 3. Travel distance is the longest shortest walk from any occupied point to an exit, measured along the route with the same wall clearance the simulation uses (the code asks for 305 mm round corners). Common path is the distance walked before the routes to two different exits split: for exits A and B it is (walk to A + walk to B − walk from A to B) ÷ 2, which is exact in corridor networks. The <b>Common path</b> map colours every point by that distance, so dead-end rooms and corridors stand out in red where they exceed the limit. Remoteness uses ⅓ of the floor diagonal when sprinklered (½ when not), measured as walking distance between exits for low- and mid-rise buildings and as a straight line for high-rise (Table 3.15.a). Capacity uses 7.6 mm per person on stairs and 5 mm on doors and level routes (Table 3.13); losing any one exit must leave at least half the required capacity (§4.2.2).</p>
+      </div>
+      <div>
         <h3>Limits — read before quoting a number</h3>
         <ul>
           <li>Single floor. Exits are the protected stair doors (or doors to outside); the optional stair-discharge limit approximates the stair below, but floors don’t merge.</li>
           <li>No smoke, no fire growth, no ASET. Compare the clearance time with an ASET from your fire engineer.</li>
           <li>No groups, families, staff wardens or people with reduced mobility.</li>
-          <li>Code checks are prescriptive and indicative, with editable limits. They are not a substitute for the UAE Fire &amp; Life Safety Code review by Civil Defence or an accredited consultant.</li>
+          <li>Code checks are prescriptive and use the UAE Fire &amp; Life Safety Code (September 2018) tables. Dead ends, single-exit permissions and occupancy-specific rules are not assessed. They are not a substitute for review by Civil Defence or an accredited consultant.</li>
           <li>Not a validated egress tool like Pathfinder or MassMotion. Use it to explore and explain options, not to sign them off.</li>
         </ul>
       </div>
@@ -386,7 +391,7 @@ canvas.sweep { width: 100%; height: 260px; display: block; }
           <li>IMO MSC.1/Circ.1533 (2016). Revised guidelines on evacuation analysis for new and existing passenger ships — verification tests.</li>
           <li>Fruin J. J. (1971). <i>Pedestrian Planning and Design</i>. Levels of Service.</li>
           <li>Weidmann U. (1993). Transporttechnik der Fussgänger. ETH Zürich.</li>
-          <li>NFPA 101 Life Safety Code (means of egress chapter) — default limits for the code checks.</li>
+          <li>UAE Fire and Life Safety Code of Practice, September 2018 (CDGH-OP-25), Chapter 3 Means of Egress — Tables 3.2, 3.4, 3.13, 3.14, 3.15.a and 3.16, §4.2.2.</li>
         </ul>
       </div>
     </div>

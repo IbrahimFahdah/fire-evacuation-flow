@@ -13,11 +13,34 @@ const PRESETS = {
   "B-M2": { label: "Retail (B) · M2 · B1 · A1–A2", p1: 1.0, p99: 3.0 },
   "M3": { label: "Any · M3 basic management (PD 7974-6: > 15 min, not acceptable for design)", p1: 15, p99: 20 },
 };
+// UAE Fire & Life Safety Code of Practice, September 2018 (CDGH-OP-25), Chapter 3.
+// load: occupant load factor, m2 per person (Table 3.13; gross unless net)
+// cp / de / td: common path, dead end, travel distance in metres as [sprinklered, non-sprinklered] (Table 3.16)
+// stair / level: egress capacity per person in mm (Table 3.13, stair and ramp/level columns)
+const UAE_REF = "UAE Fire & Life Safety Code of Practice, Sept 2018";
+const UAE = {
+  "B-office": { label: "Business — regular office", row: "Business 2.i", load: 9.3, cp: [30, 23], de: [15, 6.1], td: [91, 61] },
+  "B-conc": { label: "Business — concentrated office (call centre etc.)", row: "Business 2.ii / 2.i", load: 4.6, cp: [30, 23], de: [15, 6.1], td: [91, 61] },
+  "A-small": { label: "Assembly — 50 people or less", row: "Assembly 1.i", load: 1.4, net: true, cp: [23, 23], de: [6.1, 6.1], td: [76, 61] },
+  "A-large": { label: "Assembly — more than 50 people", row: "Assembly 1.ii", load: 1.4, net: true, cp: [6.1, 6.1], de: [6.1, 6.1], td: [76, 61] },
+  "E-class": { label: "Educational — classrooms", row: "Educational 3.i", load: 1.9, net: true, cp: [30, 23], de: [15, 6.1], td: [61, 46] },
+  "H-clinic": { label: "Healthcare — clinics, consultation", row: "Healthcare 4.ii", load: 9.3, cp: [30, 23], de: [15, 6.1], td: [91, 61] },
+  "M-street": { label: "Mercantile — sales on street floor", row: "Mercantile 13.i", load: 2.8, cp: [30, 23], de: [15, 6.1], td: [76, 46] },
+  "M-upper": { label: "Mercantile — sales above street floor", row: "Mercantile 13.i", load: 5.6, cp: [30, 23], de: [15, 6.1], td: [76, 46] },
+  "R-apt": { label: "Residential — apartments (unit door to exit)", row: "Residential 6.i", load: 18.6, cp: [15, 10.7], de: [15, 10.7], td: [61, 30], fromDoor: true },
+  "HO-room": { label: "Hotel — guest room door to exit", row: "Hotel 11.i", load: 18.6, cp: [15, 10.7], de: [15, 10.7], td: [61, 53], fromDoor: true },
+  "I-gen": { label: "Industrial — general, low hazard", row: "Industrial 19.i", load: 9.3, cp: [30, 15], de: [15, 15], td: [75, 61] },
+  "S-low": { label: "Storage — low or ordinary hazard", row: "Storage 17.i–ii", load: 27.9, cp: [30, 15], de: [30, 15], td: [122, 61] },
+};
+const UAE_STAIR_MM = 7.6, UAE_LEVEL_MM = 5;   // Table 3.13
+const UAE_MIN_DOOR = 0.915;                     // Table 3.2 item 2
+const uaeLim = () => { const o = UAE[S.code.occ], i = S.code.spr ? 0 : 1; return { o, cp: o.cp[i], de: o.de[i], td: o.td[i] }; };
+
 const S = {
   N: 250, useSeats: true, vMean: 1.25, alarm: 30,
   pre: "preset", preset: "A-M1", p1: 30, p99: 60, uMin: 15, uMax: 90, nMean: 45, nSd: 15, fixed: 30,
   exitChoice: "nearest", furniture: true, stairModel: false, seed: 1,
-  L: { travel: 91, stair: 7.6, level: 5.0, spr: true },
+  code: { occ: "B-office", spr: true, height: "low" },
 };
 let parsed = null, roles = {}, model = null, env = null, sim = null, wallG = null, srcName = "";
 let playing = true, speed = 4, heatMode = "peak", tool = "select", selected = null, optA = null, done = false;
@@ -341,7 +364,12 @@ function draw() {
   ctx.drawImage(stat, 0, 0);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (!sim || !model) return;
-  if (heatMode !== "none") {
+  if (heatMode === "cpath" && env && cpathC.width) {
+    const g = env.g, a = W2S(g.x0, g.y0 + g.ny * CS);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(cpathC, a[0], a[1], g.nx * CS * view.s, g.ny * CS * view.s);
+    ctx.imageSmoothingEnabled = true;
+  } else if (heatMode !== "none") {
     const now = performance.now();
     if (needHeat || now - lastHeat > 350) { drawHeat(); lastHeat = now; needHeat = false; }
     const H = sim.heat, a = W2S(H.x0, H.y0 + H.ny * H.cs);
@@ -543,33 +571,94 @@ function renderSel() {
 }
 
 // ------------------------------------------------------------------ code checks
+// walking-distance geometry used by the code checks, cached per route build
+//  travel distance = shortest walk to any exit (exit = start of the protected stair / outside)
+//  common path     = distance walked before routes to two different exits split. For exits A and B
+//                    it is (dA + dB − D_AB) / 2, where D_AB is the walk between the exits; exact for
+//                    corridor networks, and it lights up dead-end rooms and corridors.
+let codeGeo = null;
+function codeGeometry() {
+  if (codeGeo && codeGeo.env === env) return codeGeo;
+  const ex = env.exits, n = ex.length, N = env.g.nx * env.g.ny;
+  const D = ex.map(A => ex.map(B => { let m = INF; for (const k of B.cells) if (A.pure[k] < m) m = A.pure[k]; return m; }));
+  const cp = new Float32Array(N).fill(-1);
+  let maxT = 0, maxCP = 0, cpAt = -1;
+  for (const k of env.spawn) {
+    const t = env.pure[k]; if (t >= INF) continue;
+    if (t > maxT) maxT = t;
+    let c;
+    if (n < 2) c = t;
+    else {
+      c = INF;
+      for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) {
+        const da = ex[a].pure[k], db = ex[b].pure[k];
+        if (da >= INF || db >= INF || D[a][b] >= INF) continue;
+        c = Math.min(c, Math.max(0, (da + db - D[a][b]) / 2));
+      }
+      if (c >= INF) c = t;
+    }
+    cp[k] = c;
+    if (c > maxCP) { maxCP = c; cpAt = k; }
+  }
+  codeGeo = { env, D, cp, maxT, maxCP, cpAt };
+  return codeGeo;
+}
+const cpathC = document.createElement("canvas"), cpctx = cpathC.getContext("2d");
+function buildCpathImage(limit) {
+  const G = codeGeometry(), g = env.g;
+  cpathC.width = g.nx; cpathC.height = g.ny;
+  const img = cpctx.createImageData(g.nx, g.ny), Dd = img.data;
+  for (let j = 0; j < g.ny; j++) for (let i = 0; i < g.nx; i++) {
+    const v = G.cp[j * g.nx + i]; if (v < 1.5) continue;
+    const o = ((g.ny - 1 - j) * g.nx + i) * 4;
+    if (v > limit) { Dd[o] = 200; Dd[o + 1] = 40; Dd[o + 2] = 40; Dd[o + 3] = 190; }
+    else { const f = v / limit; Dd[o] = 245; Dd[o + 1] = 210 - 90 * f; Dd[o + 2] = 80 - 40 * f; Dd[o + 3] = 50 + 110 * f; }
+  }
+  cpctx.putImageData(img, 0, 0);
+}
 function renderChecks() {
   if (!env) return;
-  const L = S.L, N = S.N;
+  const N = S.N, L = uaeLim(), o = L.o;
+  const G = codeGeometry();
   const exits = env.exits.map(E => ({ E, d: model.doors[E.door] }));
-  let maxT = 0; for (const k of env.spawn) { const v = env.pure[k]; if (v < INF && v > maxT) maxT = v; }
   const caps = exits.map(({ E, d }) => {
-    const door = d.width * 1000 / L.level;
-    const stair = E.open ? Infinity : d.stairWidth * 1000 / L.stair;
+    const door = d.width * 1000 / UAE_LEVEL_MM;
+    const stair = E.open ? Infinity : d.stairWidth * 1000 / UAE_STAIR_MM;
     return Math.floor(Math.min(door, stair));
   });
   const totCap = caps.reduce((a, b) => a + b, 0), maxCap = Math.max(0, ...caps);
-  const needExits = N > 1000 ? 4 : (N > 500 ? 3 : 2);
+  const needExits = N > 1000 ? 4 : (N >= 500 ? 3 : 2);
   const diag = Math.hypot(model.bounds[2] - model.bounds[0], model.bounds[3] - model.bounds[1]);
+  const frac = S.code.spr ? 1 / 3 : 1 / 2;
+  const walking = S.code.height === "low";
   let sep = 0;
   for (let a = 0; a < exits.length; a++) for (let b = a + 1; b < exits.length; b++) {
-    const p = doorMid(exits[a].d), q = doorMid(exits[b].d); sep = Math.max(sep, Math.hypot(p[0] - q[0], p[1] - q[1]));
+    const p = doorMid(exits[a].d), q = doorMid(exits[b].d);
+    const v = walking ? Math.min(G.D[a][b], G.D[b][a]) : Math.hypot(p[0] - q[0], p[1] - q[1]);
+    if (v < INF) sep = Math.max(sep, v);
   }
-  const frac = L.spr ? 1 / 3 : 1 / 2;
+  const minStairReq = N > 2000 ? 1.42 : 1.2;
+  const doorsOk = exits.every(x => x.d.width >= UAE_MIN_DOOR - 1e-6);
+  const stairsOk = exits.every(x => x.E.open || x.d.stairWidth >= minStairReq - 1e-6);
+  const minDoor = exits.length ? Math.min(...exits.map(x => x.d.width)) : 0;
+  const stairs = exits.filter(x => !x.E.open), minStair = stairs.length ? Math.min(...stairs.map(x => x.d.stairWidth)) : 0;
+  const sp = S.code.spr ? "S" : "NS";
   const rows = [
-    ["Number of exits", exits.length + " (need " + needExits + " for " + N + " people)", exits.length >= needExits],
-    ["Longest travel distance", maxT.toFixed(1) + " m (limit " + L.travel + " m)", maxT <= L.travel],
-    ["Exit capacity", totCap + " people (need " + N + ")", totCap >= N],
-    ["Losing one exit", exits.length > 1 ? Math.round(100 * (totCap - maxCap) / Math.max(1, totCap)) + "% capacity remains (≥ 50%)" : "only one exit", exits.length > 1 && maxCap <= totCap / 2 + 0.5],
-    ["Exit remoteness", exits.length > 1 ? sep.toFixed(1) + " m apart (≥ " + (diag * frac).toFixed(1) + " m)" : "—", exits.length > 1 && sep >= diag * frac],
+    ["Number of exits", "Table 3.14", exits.length + " (need " + needExits + " for " + N + " people)", exits.length >= needExits],
+    ["Travel distance", "Table 3.16", G.maxT.toFixed(1) + " m (limit " + sp + " " + L.td + " m)", G.maxT <= L.td],
+    ["Common path", "Table 3.16", G.maxCP.toFixed(1) + " m (limit " + sp + " " + L.cp + " m)", G.maxCP <= L.cp],
+    ["Dead ends", "Table 3.16", "limit " + sp + " " + L.de + " m — not measured; dead-end corridors show on the Common path map", null],
+    ["Exit capacity", "Table 3.13", totCap + " people (need " + N + ")", totCap >= N],
+    ["Losing one exit", "§4.2.2", exits.length > 1 ? Math.round(100 * (totCap - maxCap) / Math.max(1, N)) + "% of required capacity remains (≥ 50%)" : "only one exit", exits.length > 1 && totCap - maxCap >= N / 2],
+    ["Exit remoteness", "Table 3.15.a", exits.length > 1 ? sep.toFixed(1) + " m " + (walking ? "walking" : "straight line") + " (≥ " + (diag * frac).toFixed(1) + " m, " + (S.code.spr ? "⅓" : "½") + " diagonal)" : "—", exits.length > 1 && sep >= diag * frac],
+    ["Minimum widths", "Tables 3.2, 3.4", "door " + minDoor.toFixed(2) + " m (≥ 0.915) · stair " + (stairs.length ? minStair.toFixed(2) + " m (≥ " + minStairReq.toFixed(2) + ")" : "—"), doorsOk && stairsOk],
   ];
-  $("#codeTable").innerHTML = "<tr><th>Check</th><th>Result</th><th></th></tr>" + rows.map(r => "<tr><td>" + r[0] + "</td><td style='font-size:12px;color:var(--ink-2)'>" + r[1] + "</td><td>" + (r[2] ? "<span class='pill ok'>Pass</span>" : "<span class='pill fail'>Fail</span>") + "</td></tr>").join("") +
-    "<tr><td colspan='3' class='note'>Capacity per exit = min(door width ÷ " + L.level + " mm, stair width ÷ " + L.stair + " mm). Travel distance is measured along the walking route, not as the crow flies. Common path and dead ends are not checked.</td></tr>";
+  const pill = v => v === null ? "<span class='pill info'>Info</span>" : (v ? "<span class='pill ok'>Pass</span>" : "<span class='pill fail'>Fail</span>");
+  $("#codeTable").innerHTML = "<tr><th>Check</th><th>Result</th><th></th></tr>" + rows.map(r => "<tr><td>" + r[0] + "<div class='note'>" + r[1] + "</div></td><td style='font-size:12px;color:var(--ink-2)'>" + r[2] + "</td><td>" + pill(r[3]) + "</td></tr>").join("") +
+    "<tr><td colspan='3' class='note'>" + esc(o.label) + " (" + o.row + "): " + o.load + " m²" + (o.net ? " net" : "") + " per person. Capacity per exit = min(door width ÷ " + UAE_LEVEL_MM + " mm, stair width ÷ " + UAE_STAIR_MM + " mm). Distances are walked along the route, keeping clear of walls, to the exit door." +
+    (o.fromDoor ? " For this occupancy Table 3.16 measures from the unit door; the app measures from every occupied point, so its figures are conservative." : "") + "</td></tr>";
+  buildCpathImage(L.cp);
+  if (heatMode === "cpath") renderLegend();
 }
 
 // ------------------------------------------------------------------ pre-movement UI
@@ -826,6 +915,7 @@ function renderLegend() {
   let h = ag;
   if (heatMode === "peak") h += "<span class='los' title='Fruin Level of Service, walkways'>" + LOS.slice(2).map(L => "<span style='background:rgb(" + L[2].join(",") + ")'>" + L[1] + "</span>").join("") + "</span><span>Fruin LOS (peak)</span>";
   if (heatMode === "cong") h += "<span class='los'><span style='background:rgb(240,180,40);width:30px'></span><span style='background:rgb(190,30,40);width:30px'></span></span><span>s above 1.08 p/m²</span>";
+  if (heatMode === "cpath") h += "<span class='los'><span style='background:rgb(245,190,70);width:30px'></span><span style='background:rgb(245,120,40);width:30px'></span><span style='background:rgb(200,40,40);width:30px'></span></span><span>common path, red &gt; " + (UAE[S.code.occ] ? uaeLim().cp : "") + " m</span>";
   $("#legend").innerHTML = h;
 }
 $("#b-saveA").onclick = () => {
@@ -854,8 +944,9 @@ function renderNPresets() {
   const area = model ? (model.bounds[2] - model.bounds[0]) * (model.bounds[3] - model.bounds[1]) : 0;
   const opts = [];
   if (seats) opts.push(["Workstations", seats]);
-  if (area) opts.push(["Code load ÷9.3 m²", Math.round(area / 9.3)]);
-  opts.push(["Busy day", Math.round((seats || area / 9.3) * 2 / 10) * 10]);
+  const f = UAE[S.code.occ].load;
+  if (area) opts.push(["Code load ÷" + f + " m²", Math.round(area / f)]);
+  opts.push(["Busy day", Math.round((seats || area / f) * 2 / 10) * 10]);
   $("#nPresets").innerHTML = opts.map(([l, v]) => "<button class='btn' data-n='" + v + "'>" + l + " · " + v + "</button>").join("");
   $("#nPresets").querySelectorAll("button").forEach(b => b.onclick = () => { S.N = Math.min(1000, Math.max(20, +b.dataset.n)); $("#i-N").value = S.N; $("#o-N").textContent = S.N + " people"; renderChecks(); restart(true); });
 }
@@ -864,8 +955,10 @@ $("#i-pre").onchange = e => { S.pre = e.target.value; renderPre(); restart(true)
 $("#i-choice").onchange = e => { S.exitChoice = e.target.value; restart(true); };
 $("#i-furn").onchange = e => { S.furniture = e.target.checked; rebuild(true); };
 $("#i-stair").onchange = e => { S.stairModel = e.target.checked; restart(true); };
-for (const [id, key] of [["#L-travel", "travel"], ["#L-stair", "stair"], ["#L-level", "level"]]) $(id).onchange = e => { S.L[key] = Math.max(0.1, +e.target.value || S.L[key]); renderChecks(); };
-$("#L-spr").onchange = e => { S.L.spr = e.target.checked; renderChecks(); };
+$("#i-occ").innerHTML = Object.entries(UAE).map(([k, v]) => "<option value='" + k + "'" + (k === S.code.occ ? " selected" : "") + ">" + esc(v.label) + "</option>").join("");
+$("#i-occ").onchange = e => { S.code.occ = e.target.value; renderNPresets(); renderChecks(); };
+$("#L-spr").onchange = e => { S.code.spr = e.target.checked; renderChecks(); };
+$("#i-height").onchange = e => { S.code.height = e.target.value; renderChecks(); };
 
 // tabs
 document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
