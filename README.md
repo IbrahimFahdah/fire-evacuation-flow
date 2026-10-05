@@ -23,8 +23,8 @@ python3 tests/browser_check.py  # optional headless-Chromium smoke test (needs P
 The app is deployed as a static site on GitHub Pages.
 
 - `python3 tools/build.py` writes the whole site to `dist/` (`index.html` plus a `.nojekyll` marker).
-- Every push to `main` runs [`.github/workflows/pages.yml`](.github/workflows/pages.yml), which rebuilds `dist/` and publishes it to the `gh-pages` branch.
-- Pages serves `gh-pages` / root (Settings → Pages → Deploy from branch).
+- Every push to `main` runs [`.github/workflows/pages.yml`](.github/workflows/pages.yml), which rebuilds `dist/` and deploys it to Pages.
+- Repo setting required once: Settings → Pages → Build and deployment → Source: **GitHub Actions**.
 
 `dist/` is plain static files, so it can also be hosted on Netlify, Cloudflare Pages, S3 or any web server as is.
 
