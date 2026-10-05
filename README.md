@@ -1,5 +1,7 @@
 # Evacuation Flow
 
+**Live app: https://ibrahimfahdah.github.io/fire-evacuation-flow/**
+
 An agent-based evacuation simulator for floor plans that runs entirely in the browser. Load a DXF floor plate, confirm the exits, then move a door, widen an exit or block a stair and watch the clearance time and the bottleneck heatmap update.
 
 ![Studio after moving a door](docs/screenshots/moved.png)
@@ -8,7 +10,7 @@ An agent-based evacuation simulator for floor plans that runs entirely in the br
 
 ## Quick start
 
-No install needed. Open `dist/index.html` in a browser. It is one self-contained file with the sample floor embedded; only the Google Fonts load from the web.
+No install needed. Open the [live app](https://ibrahimfahdah.github.io/fire-evacuation-flow/), or open `dist/index.html` locally. It is a static site: one self-contained HTML file with the engine and the sample floor embedded, no server or backend. Only the Google Fonts load from the web.
 
 ```bash
 python3 tools/build.py          # rebuild dist/ from src/
@@ -16,7 +18,15 @@ node tests/engine.test.js       # engine verification (IMO tests + door-flow swe
 python3 tests/browser_check.py  # optional headless-Chromium smoke test (needs Playwright)
 ```
 
-Live at **https://ibrahimfahdah.github.io/fire-evacuation-flow/**. Every push to `main` runs `.github/workflows/pages.yml`, which rebuilds `dist/` and publishes it to the `gh-pages` branch (Settings → Pages → Deploy from branch → `gh-pages` / root).
+## Deployment
+
+The app is deployed as a static site on GitHub Pages.
+
+- `python3 tools/build.py` writes the whole site to `dist/` (`index.html` plus a `.nojekyll` marker).
+- Every push to `main` runs [`.github/workflows/pages.yml`](.github/workflows/pages.yml), which rebuilds `dist/` and publishes it to the `gh-pages` branch.
+- Pages serves `gh-pages` / root (Settings → Pages → Deploy from branch).
+
+`dist/` is plain static files, so it can also be hosted on Netlify, Cloudflare Pages, S3 or any web server as is.
 
 ## What it does
 
@@ -61,10 +71,11 @@ src/
   testscenes.js   IMO / SFPE test geometries
   app.js          UI: canvas rendering, editing, panels, Monte Carlo worker
   template.html   markup + CSS; build.py inlines the modules and the sample DXF
-tools/build.py    builds dist/
-dist/
-  index.html            standalone page (GitHub Pages)
-  evacuation-flow.html  page fragment as published to Claude artifacts
+tools/build.py    builds the static site into dist/
+.github/workflows/pages.yml  builds and deploys dist/ on every push to main
+dist/             the static site (built output, deployed to GitHub Pages)
+  index.html
+  .nojekyll
 samples/
   Sample_Office_Level03.dxf          fictional 48 × 24 m office floor (mm, AIA-style layers)
   Sample_Office_Level03_preview.png

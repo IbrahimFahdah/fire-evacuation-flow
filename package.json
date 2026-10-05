@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "description": "Browser-based, agent-based evacuation simulator for floor plans: DXF import, social force model, bottleneck heatmaps, PD 7974-6 pre-movement, IMO verification tests.",
   "private": true,
+  "homepage": "https://ibrahimfahdah.github.io/fire-evacuation-flow/",
+  "repository": "github:IbrahimFahdah/fire-evacuation-flow",
   "scripts": {
     "build": "python3 tools/build.py",
     "test": "node tests/engine.test.js",
