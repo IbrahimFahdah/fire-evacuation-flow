@@ -88,6 +88,11 @@ function validPlacement(d, hinge, width) {
   let tot = 0, w = 0;
   for (let s = 0.05; s <= width - 0.05; s += 0.05) { tot++; const p = dp(d, s, tm, hinge); if (isWall(p[0], p[1])) w++; }
   if (!tot || w / tot < 0.92) return false;
+  // the opening is cut a little beyond both wall faces; if another wall meets this one inside the
+  // opening (a T-junction or corner), cutting would remove part of that wall too, so refuse
+  for (let s = 0.1; s <= width - 0.1; s += 0.05) {
+    for (const t of [b[0] - 0.15, b[1] + 0.15]) { const p = dp(d, s, t, hinge); if (isWall(p[0], p[1])) return false; }
+  }
   for (const o of model.doors) {
     if (o === d) continue;
     if (Math.abs(o.u[0] * d.u[0] + o.u[1] * d.u[1]) < 0.99) continue;
@@ -879,7 +884,7 @@ const mq = matchMedia("(prefers-color-scheme: dark)");
 new MutationObserver(() => { readColors(); if (env) buildZoneImage(); renderLegend(); }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
 // handle for power users / testing
-window.evacuationFlow = { get model() { return model; }, get view() { return view; }, get sim() { return sim; }, W2S: (x, y) => W2S(x, y), rebuild: () => rebuild(true) };
+window.evacuationFlow = { get model() { return model; }, get view() { return view; }, get sim() { return sim; }, W2S: (x, y) => W2S(x, y), rebuild: () => rebuild(true), canPlace: (d, hinge, width) => validPlacement(d, hinge, width) };
 
 // boot
 readColors();
